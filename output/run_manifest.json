@@ -1,0 +1,41 @@
+{
+  "script": "AJR_ml_extension_final.py",
+  "data_file": "/Users/wenjinggao/Documents/Laurier/Machine Learning/Final Paper/AJR_final_dataset.csv",
+  "data_file_name": "AJR_final_dataset.csv",
+  "data_sha256": "26c96e53be232613abf3a52c4769a34fee10917b123fef49b375935cf0442efe",
+  "rows": 64,
+  "columns": 42,
+  "python": "3.13.5",
+  "numpy": "2.1.3",
+  "pandas": "2.2.3",
+  "scikit_learn": "1.6.1",
+  "seed": 42,
+  "specifications": {
+    "Spec 1: Latitude only": [
+      "latitude"
+    ],
+    "Spec 2: AJR robustness controls": [
+      "latitude",
+      "malfal94",
+      "edes1975"
+    ],
+    "Spec 3: AJR + mediators": [
+      "latitude",
+      "malfal94",
+      "edes1975",
+      "log_pop_density",
+      "log_trade",
+      "fdi_pct_gdp",
+      "life_expectancy"
+    ]
+  },
+  "baseline_result": {
+    "beta": 0.9294895771740993,
+    "se_robust": 0.1728087324790371,
+    "first_stage_f": 23.341334899559126,
+    "n": 64
+  },
+  "n_significant_at_5pct": 0,
+  "n_total_tests": 15,
+  "n_ci_no_overlap": 0
+}

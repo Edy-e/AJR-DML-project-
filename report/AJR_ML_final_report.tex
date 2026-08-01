@@ -1,0 +1,463 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{authblk}
+\usepackage{microtype}
+\usepackage{colortbl}
+\usepackage{xcolor}
+
+\setlength{\columnsep}{0.35in}
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{12pt}
+\captionsetup{font=small,labelfont=bf,skip=4pt}
+\renewcommand{\baselinestretch}{1.02}
+
+\title{\vspace{-1.2cm}\textbf{Does Double/Debiased Machine Learning Change the AJR Estimate?}\\
+\textbf{A Coefficient-Comparison Test in a Small-Sample IV Design}}
+\author[1]{Wenjing Gao}
+\author[1]{Edith Jiang}
+\affil[1]{EC610I -- Machine Learning in Economics, Wilfrid Laurier University}
+\date{July 2026}
+
+\begin{document}
+\twocolumn[
+\begin{@twocolumnfalse}
+\maketitle
+\begin{abstract}
+\small
+We ask a narrow, directly testable question: in Acemoglu, Johnson, and
+Robinson's (2001, AJR) small-sample instrumental-variables design
+($N=64$ former colonies), does replacing the linear first-stage and
+outcome models with double/debiased machine learning (DML;
+Chernozhukov et al., 2018) produce a coefficient that is
+\emph{statistically different} from the conventional 2SLS estimate? We
+estimate the institutional effect on log GDP per capita under three
+nested control specifications, each with 2SLS and five DML nuisance
+learners (Lasso, Ridge, Elastic Net, Random Forest, Gradient Boosting),
+and report an approximate difference-in-coefficients test between
+every DML estimate and its 2SLS counterpart from the identical
+specification and sample. Across all 15 comparisons, no DML coefficient
+is statistically distinguishable from 2SLS at the 5\% level. However,
+the three regularized linear learners produce similar coefficients with
+standard errors 25--45\% smaller than 2SLS. Tree-ensemble learners move
+the point estimate substantially (in one specification, more than
+doubling it) but their own standard errors inflate so much that even
+this large a shift fails to reach significance -- evidence of estimator
+instability, not a competing causal finding. These results suggest that
+regularized linear DML can improve estimated precision without changing
+the underlying causal conclusion, whereas tree-based nuisance learners
+are unstable in this small sample.
+\end{abstract}
+\vspace{6pt}
+\end{@twocolumnfalse}
+]
+
+\section{Introduction}
+AJR (2001) instrument modern institutional quality with log settler
+mortality to identify the causal effect of institutions on long-run GDP,
+using 64 former European colonies. Their 2SLS estimate -- 0.93 in the
+corrected 2012 data -- is a canonical result in development economics.
+Rather than asking the broad question of whether ``machine learning
+improves causal inference'' in the abstract, we ask a single, sharply
+defined and directly testable question:
+
+\begin{quote}
+\small\itshape
+If we replace the linear nuisance functions inside AJR's IV estimator
+with machine learning, does the resulting coefficient differ, in a
+formal statistical sense, from the original 2SLS estimate?
+\end{quote}
+
+This reframing matters because \emph{whether the coefficient differs}
+and \emph{how precisely it is estimated} are two separate questions. A
+large difference in point estimates is not, by itself, informative if
+both estimates carry wide uncertainty; a small difference in point
+estimates combined with a smaller standard error is informative even
+when the two coefficients are not formally distinguishable. Our
+contribution is to make this comparison explicit: for every
+machine-learning estimator we consider, we report the point estimate, an
+approximate equality test against 2SLS, and the percentage change in
+standard error. This lets us describe, coefficient by coefficient,
+whether -- and in what sense -- DML changes on the original 2SLS
+approach.
+
+Our focus on coefficient comparison distinguishes this paper from
+studies that evaluate machine learning primarily by predictive
+accuracy. In causal applications the object of interest is the
+structural parameter $\beta_1$, not the fitted outcome, so predictive
+performance alone is not sufficient evidence that a learner has
+improved the analysis: a nuisance learner can fit $y$, $R$, or $M$
+well and still produce a badly behaved $\hat\beta_1$ if it introduces
+regularization bias into the residualization step. Accordingly, our
+evaluation throughout emphasizes statistical equality of the
+coefficient and changes in estimation precision, rather than
+improvements in out-of-sample prediction.
+
+\section{Data and Baseline}
+Our sample is 64 former European colonies from the AJR (2012) reply
+dataset. The endogenous regressor is protection against expropriation
+risk (ICRG, 1985--1995, 0--10 scale). The instrument is log settler
+mortality. The outcome is log GDP per capita.
+
+We reproduce AJR (2012) Table 1B column 1 exactly: $\hat\beta_1 = 0.929$,
+conventional SE $=0.156$, HC1-robust SE $=0.173$, first-stage $F=23.3$.
+This no-controls estimate serves as a reference point throughout the
+paper -- a benchmark estimate against which the fragility introduced by
+adding controls can be judged -- though our formal equality tests
+(Section 4) compare DML directly to the \emph{controlled} 2SLS estimate
+from the same specification, not to this no-controls benchmark.
+
+We estimate the causal effect under three nested control specifications
+that span AJR's own robustness checks:
+\begin{itemize}
+\item \textbf{Spec 1 (latitude only, $N=64$):} the one control AJR
+themselves treat as unambiguously pre-instrument.
+\item \textbf{Spec 2 (AJR robustness controls, $N=62$):} latitude,
+malaria prevalence (1994), and \% European descent (1975) -- AJR's own
+robustness-check controls.
+\item \textbf{Spec 3 (AJR + mediators, $N=56$):} Spec 2 plus log
+population density, log trade, FDI, and life expectancy.
+\end{itemize}
+Specification 3 is best read as a sensitivity exercise rather than a
+like-for-like extension of Specifications 1--2: because the added
+variables may themselves be channels through which institutions affect
+GDP, conditioning on them can shift the estimand toward a more
+conditional institutional effect rather than AJR's total effect. Within
+Specification 3, the comparison between DML and 2SLS is still valid
+(both estimators target the same conditional parameter), but that
+parameter should not be read as directly comparable to the total effect
+recovered in Specifications 1--2. Each specification uses its own
+complete-case sample, which is why $N$ varies across specifications.
+
+\section{Method}
+\subsection{DML in the IV Setting}
+For each specification we estimate the causal effect two ways: we
+estimate the original AJR specification using 2SLS and report
+HC1-robust standard errors, and we apply DML in the partially linear IV
+model of Chernozhukov et al.\ (2018).
+Writing $y_i$ for log GDP, $R_i$ for institutional quality, $M_i$ for
+log settler mortality, and $X_i$ for the control vector:
+\begin{align}
+y_i &= \beta_1 R_i + g_y(X_i) + \varepsilon_i, \\
+R_i &= m_R(X_i) + \xi_i, \qquad M_i = m_M(X_i) + \eta_i.
+\end{align}
+Each nuisance function ($g_y$, $m_R$, $m_M$) is estimated by the same
+machine-learning method on a training fold and residualized on a
+held-out fold, using $K=5$-fold cross-fitting. The coefficient is
+recovered from the cross-fitted residuals,
+\begin{equation}
+\hat\beta_1 = \frac{\sum_i \tilde M_i \tilde y_i}{\sum_i \tilde M_i \tilde R_i},
+\end{equation}
+Intuitively, DML first removes the variation explained by the control
+variables from the outcome, the endogenous regressor, and the
+instrument, using the fitted nuisance functions; the causal coefficient
+is then estimated using only the residual variation that remains after
+this residualization step. Cross-fitting ensures that the same
+observations are never used both to train the nuisance models and to
+form the residuals used in estimation, which limits the overfitting
+bias that would otherwise result from a flexible learner fitting noise
+in the training fold and passing that noise into $\hat\beta_1$.
+with a heteroskedasticity-robust orthogonal-score standard error built
+from the Neyman-orthogonal moment $\psi_i(\beta)=\tilde M_i(\tilde y_i -
+\beta \tilde R_i)$. We compare this DML standard error against 2SLS's
+HC1-robust standard error; both are heteroskedasticity-robust, but they
+are constructed differently (one from a sandwich formula on
+cross-fitted residuals, the other from the classical HC1 correction),
+so the comparison is between two robust standard errors of different
+provenance, not a like-for-like recomputation of the same object. We
+use five nuisance learners: Lasso, Ridge, and Elastic Net (regularization
+chosen by inner cross-validation), Random Forest (300 trees, depth 4),
+and Gradient Boosting (150 trees, depth 3).
+
+\subsection{The Coefficient-Comparison Test}
+For every DML estimate we compute an approximate difference-in-coefficients
+statistic against the 2SLS estimate from the identical specification and
+sample:
+\begin{equation}
+z = \frac{\hat\beta_1^{\text{DML}} - \hat\beta_1^{\text{2SLS}}}
+{\sqrt{\left(\text{SE}^{\text{DML}}\right)^2 + \left(\text{SE}^{\text{2SLS}}\right)^2}}.
+\label{eq:ztest}
+\end{equation}
+This statistic is analogous in spirit to a Hausman-style comparison,
+but it is not a formal Hausman test: it treats the two estimators'
+sampling distributions as independent and does not estimate the
+covariance between them, since 2SLS and DML are computed on the same
+underlying sample and a tractable joint covariance is not available.
+This is a simplifying approximation, not necessarily a conservative
+one -- ignoring a nonzero covariance can move the test in either
+direction depending on its sign. We report the resulting two-sided
+$p$-value as our primary evidence on coefficient equality.
+Confidence-interval overlap is reported alongside as a visual
+diagnostic, not as an independent formal test; throughout the paper,
+the formal comparison is the $p$-value from Equation~\ref{eq:ztest}.
+
+\section{Results}
+
+\subsection{Main Table: Coefficients and Coefficient-Comparison Tests}
+Table~\ref{tab:main} is the central empirical result of the paper. For
+every specification and every DML learner it reports the point
+estimate, the standard error, the percentage change in SE relative to
+2SLS, and the $p$-value from Equation~\ref{eq:ztest}.
+
+\begin{table}[t]
+\centering
+\scriptsize
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Estimator} & $\hat\beta_1$ & \textbf{SE} & \textbf{SE $\Delta$} & \textbf{$p$} \\
+\midrule
+\multicolumn{5}{l}{\textit{Spec 1: Latitude only ($N{=}64$, $F{=}13.5$)}} \\
+\midrule
+2SLS               & 0.962 & 0.232 & --      & --    \\
+DML Lasso          & 0.956 & 0.228 & $-$1.6\%  & 0.99 \\
+DML Ridge          & 0.948 & 0.229 & $-$1.4\%  & 0.96 \\
+DML Elastic Net    & 0.959 & 0.230 & $-$1.1\%  & 0.99 \\
+DML Random Forest  & 0.910 & 0.247 & $+$6.5\%  & 0.88 \\
+DML Gradient Boost.\ & 0.921 & 0.294 & $+$26.5\% & 0.91 \\
+\midrule
+\multicolumn{5}{l}{\textit{Spec 2: AJR robustness controls ($N{=}62$, $F{=}3.3$)}} \\
+\midrule
+2SLS               & 0.660 & 0.368 & --      & --    \\
+DML Lasso          & 0.559 & 0.257 & $\mathbf{-30.2\%}$ & 0.82 \\
+DML Ridge          & 0.609 & 0.275 & $\mathbf{-25.1\%}$ & 0.91 \\
+DML Elastic Net    & 0.572 & 0.268 & $\mathbf{-27.2\%}$ & 0.85 \\
+DML Random Forest  & 1.366 & 0.896 & $+$143.5\% & 0.47 \\
+DML Gradient Boost.\ & 1.073 & 0.695 & $+$88.9\% & 0.60 \\
+\midrule
+\multicolumn{5}{l}{\textit{Spec 3: AJR + mediators ($N{=}56$, $F{=}2.8$)}} \\
+\midrule
+2SLS               & 0.450 & 0.336 & --      & --    \\
+DML Lasso          & 0.422 & 0.236 & $\mathbf{-29.6\%}$ & 0.95 \\
+DML Ridge          & 0.368 & 0.184 & $\mathbf{-45.1\%}$ & 0.83 \\
+DML Elastic Net    & 0.413 & 0.227 & $\mathbf{-32.4\%}$ & 0.93 \\
+DML Random Forest  & 0.694 & 0.341 & $+$1.6\%  & 0.61 \\
+DML Gradient Boost.\ & 0.610 & 0.313 & $-$6.8\%  & 0.73 \\
+\bottomrule
+\end{tabular}
+\caption{Coefficient comparison and approximate equality tests, DML
+vs.\ 2SLS. SE is HC1-robust for 2SLS and orthogonal-score for DML. $p$
+is the two-sided $p$-value from Equation~\ref{eq:ztest}. Every one of
+the 15 DML-vs-2SLS pairs also has overlapping 95\% confidence intervals
+(a secondary, visual check; see Figure~\ref{fig:main}). Bold SE changes
+mark the $\geq$25\% reductions achieved by all three regularized linear
+learners in Specs 2--3.}
+\label{tab:main}
+\end{table}
+
+No coefficient in Table~\ref{tab:main} is statistically different from
+its same-specification 2SLS counterpart: all 15 $p$-values exceed 0.46.
+This means DML does not produce a formally different causal conclusion
+than 2SLS at any specification we consider.
+
+Where the two approaches diverge is precision, not the coefficient
+itself. In Specifications 2 and 3 -- where the 2SLS first stage is
+weakest (F = 3.3 and 2.8, both below the conventional threshold of 10)
+-- the three regularized linear DML learners produce coefficients
+statistically indistinguishable from 2SLS while cutting the standard
+error by 25\% to 45\%. In Specification 3, for example, DML Ridge's
+coefficient (0.368) is statistically indistinguishable from 2SLS's
+(0.450), but its standard error (0.184) is roughly half of 2SLS's
+(0.336). In Specification 1, where the instrument is already strong
+(F = 13.5), the SE changes are much smaller ($-$1\% to $-$2\%).
+
+Tree-ensemble learners move the point estimate substantially -- in
+Specification 2, Random Forest's coefficient (1.366) is more than
+double the 2SLS estimate (0.660) -- but the coefficient remains
+statistically indistinguishable from 2SLS ($p=0.47$), because Random
+Forest's own standard error (0.896) is more than double 2SLS's (0.368).
+A large point-estimate shift combined with a large standard error is
+not statistical evidence of a different effect.
+
+\subsection{Main Figure}
+Figure~\ref{fig:main} plots every estimator's point estimate and 95\%
+confidence interval, grouped by specification, with 2SLS shown as a
+black $\times$ in each panel. The pattern in Table~\ref{tab:main} is
+directly visible: the three linear DML learners sit close to the 2SLS
+estimate with visibly tighter intervals, while the two tree learners
+are noticeably shifted with much wider intervals that still comfortably
+contain the 2SLS point estimate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{main_coefficient_comparison.png}
+\caption{Estimated institutional effect: 2SLS and DML coefficients
+across specifications. Points show coefficient estimates and horizontal
+bars show 95\% confidence intervals. The black $\times$ is the
+same-specification 2SLS estimate. The dashed line in each panel marks
+that panel's own 2SLS coefficient, the benchmark used in the equality
+test of Table~\ref{tab:main}.}
+\label{fig:main}
+\end{figure}
+
+\subsection{Interpretation Across Specifications}
+Read together, the three specifications reveal a consistent pattern
+rather than three unrelated snapshots. When only latitude is controlled
+for (Specification 1), the first-stage relationship remains relatively
+strong (F = 13.5), and DML produces coefficients and standard errors
+nearly identical to 2SLS -- there is little for a more flexible
+nuisance learner to improve upon. As additional controls are introduced
+in Specification 2, the classical first stage weakens considerably
+(F = 3.3), and this is precisely where the regularized linear learners
+begin to produce noticeably smaller standard errors while the
+coefficient itself remains statistically indistinguishable from 2SLS.
+Specification 3 introduces variables that may lie on the causal pathway
+from institutions to income, so both 2SLS and DML there are best read
+as estimating a more conditional effect (Section 2). Although the point
+estimate declines further in this specification, the comparison between
+DML and 2SLS \emph{within} it is unchanged from the pattern in
+Specification 2: no learner produces a statistically different
+coefficient, and the linear learners continue to deliver the same
+coefficient more precisely. The precision advantage of linear DML,
+in other words, tracks the weakness of the classical first stage
+across specifications, not the specific set of controls used.
+
+\section{Discussion}
+
+\subsection{Linear Learners: Similar Coefficients, Smaller Standard Errors}
+The standard-error reduction achieved by Lasso, Ridge, and Elastic Net
+appears consistently across two independent specifications (2 and 3),
+is largest exactly where the classical first stage is weakest, and
+holds while the coefficient itself barely moves (differences of
+0.03--0.09 in Specification 2, well within one standard error of either
+estimator). The pattern is consistent with regularization stabilizing
+nuisance-function estimation when controls are moderately collinear
+with the instrument, as AJR's robustness controls are -- though we do
+not separately test this mechanism against alternatives, and it should
+be read as a plausible interpretation rather than an identified
+mechanism. In Specification 1, where the classical first stage is
+already strong, the linear DML learners offer almost no precision
+advantage. This is economically intuitive rather than merely
+descriptive: with a single control, the nuisance functions relating
+latitude to the outcome, the treatment, and the instrument are close to
+linear and easy to estimate with ordinary least squares. Replacing that
+linear regression with a regularized machine-learning method provides
+little additional flexibility to exploit, so DML has little room to
+improve on 2SLS. The precision benefit becomes visible only once
+additional, more collinear controls are introduced, where regularization
+can reduce estimation noise in the nuisance functions while leaving the
+recovered coefficient largely unchanged.
+
+\subsection{Tree Learners: Large Shifts Without Statistical Support}
+Random Forest's near-doubling of the coefficient in Specification 2
+could be read, on its face, as evidence that a more flexible model
+captures something 2SLS misses. The coefficient-comparison test cautions
+against that reading: the difference is not statistically supported
+($p=0.47$), because Random Forest's own standard error (0.896) is more
+than double 2SLS's (0.368). At $N\approx 60$, a several-hundred-tree
+ensemble has few effective observations per leaf, and we verified this
+instability is not an artifact of our specific hyperparameters --
+alternative depth and leaf-size specifications produce comparably large
+standard errors. The large tree-based point-estimate shifts are better
+interpreted as small-sample estimator instability than as evidence of
+a different causal effect.
+
+The tree learners illustrate a broader lesson that is easy to overlook
+when evaluating machine learning by point estimates alone: a more
+flexible learner is not necessarily a better learner in a causal
+setting. Random Forest and Gradient Boosting produce substantially
+different point estimates from 2SLS, but those differences are
+accompanied by much larger standard errors -- in other words, the
+additional flexibility increases variance faster than it reduces any
+bias from nuisance-function misspecification. For a sample of roughly
+sixty observations, the data simply do not contain enough information
+to support a highly adaptive nuisance model with hundreds of trees;
+the classical bias-variance tradeoff resolves here in favor of the
+simpler, more constrained linear learners.
+
+\subsection{In What Sense Does DML Improve on 2SLS?}
+Two distinct answers, by learner class. For the regularized linear
+learners, DML produces similar coefficients with materially smaller
+estimated standard errors than 2SLS, in the specifications where 2SLS
+is weakest. For the tree-ensemble learners, neither the coefficient nor
+the precision improves: the point estimates move substantially, but the
+accompanying standard errors are too large to treat those movements as
+informative. Whether DML ``improves on'' 2SLS in this application
+therefore depends entirely on which nuisance-learner class is used, and
+answering that question requires the coefficient-by-coefficient
+comparison reported here, rather than relying solely on visual
+differences in point estimates.
+
+\section{Limitations}
+Three limitations deserve emphasis. First, our coefficient-comparison
+test (Equation~\ref{eq:ztest}) does not estimate the covariance between
+the 2SLS and DML estimators, even though both are computed on the same
+underlying sample; a paired bootstrap that resamples both estimators
+jointly would give a more exact test, and we do not implement that
+here. Second, at $N=56$--64, both the DML sandwich standard error and
+our normal-approximation test rely on asymptotic justifications that
+warrant some caution at this sample size. The sample contains only
+56--64 observations after complete-case deletion, and although DML
+remains theoretically valid under the regularity conditions of
+Chernozhukov et al.\ (2018), its finite-sample behavior depends heavily
+on the quality of the underlying nuisance-function estimates -- which
+is, in fact, the central empirical question this paper investigates.
+Our findings should therefore be read as evidence from a particularly
+challenging small-sample application, not as a general statement about
+DML's performance at larger sample sizes. Third, the first stage itself
+is weak in Specifications 2 and 3 (F below the conventional threshold
+of 10), so point estimates from either estimator in those specifications
+should be interpreted cautiously, independent of which method produced
+them.
+
+\section{Conclusion}
+Across three specifications and five machine-learning nuisance
+learners, no DML coefficient is statistically distinguishable from the
+corresponding 2SLS estimate. DML does not change the substantive
+conclusion of AJR's analysis. What differs by learner class is
+precision: regularized linear DML learners produce similar coefficients
+with materially smaller estimated standard errors than 2SLS, in the
+specifications where the classical first stage is weakest. Tree-ensemble
+learners add instability rather than value -- their point estimates
+shift substantially, but the accompanying standard errors are too large
+for those shifts to carry statistical weight.
+
+More broadly, our results suggest that evaluating machine learning in
+economics should not focus only on whether coefficients become larger
+or smaller. Instead, researchers should ask whether the estimated
+causal effect changes in a statistically meaningful way, and whether
+the uncertainty surrounding that estimate improves. In the AJR
+application, machine learning does not overturn the original economic
+conclusion, but regularized linear DML suggests that a similar
+causal estimate can sometimes be obtained more precisely -- which is a
+narrower, but more defensible, claim than saying machine learning
+``improves'' causal inference in general.
+
+\begin{thebibliography}{9}\small
+\bibitem{ajr2001} Acemoglu, D., Johnson, S., Robinson, J.A. (2001). The
+Colonial Origins of Comparative Development. \emph{AER}, 91(5),
+1369--1401.
+\bibitem{ajr2012} Acemoglu, D., Johnson, S., Robinson, J.A. (2012). The
+Colonial Origins of Comparative Development: Reply. \emph{AER}, 102(6),
+3077--3110.
+\bibitem{chern2018} Chernozhukov, V., et al.\ (2018). Double/Debiased
+Machine Learning for Treatment and Structural Parameters.
+\emph{Econometrics J.}, 21(1), C1--C68.
+\bibitem{curtin1989} Curtin, P.D. (1989). \emph{Death by Migration}.
+Cambridge University Press.
+\bibitem{hausman1978} Hausman, J.A. (1978). Specification Tests in
+Econometrics. \emph{Econometrica}, 46(6), 1251--1271.
+\end{thebibliography}
+
+\appendix
+\section*{Appendix: Standard Errors by Specification and Estimator}
+Figure~\ref{fig:se_comparison} shows the same standard errors reported
+in Table~\ref{tab:main}, organized as a bar chart grouped by
+specification and estimator, to make the SE pattern across the 18
+estimates easier to scan visually alongside the coefficient-level
+comparison in Figure~\ref{fig:main}.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{se_comparison.png}
+\caption{HC1-robust (2SLS) and orthogonal-score (DML) standard errors
+by specification and estimator. Bars correspond to the SE column of
+Table~\ref{tab:main}.}
+\label{fig:se_comparison}
+\end{figure}
+
+\end{document}
